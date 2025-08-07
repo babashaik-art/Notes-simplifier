@@ -391,6 +391,128 @@ def get_leaderboard(game_type):
         'date': score[3].isoformat()
     } for score in scores])
 
+@app.route('/api/user/profile', methods=['GET', 'PUT'])
+@jwt_required()
+def user_profile():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+    
+    if request.method == 'GET':
+        return jsonify({
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'created_at': user.created_at.isoformat()
+        })
+    
+    elif request.method == 'PUT':
+        data = request.get_json()
+        
+        if 'name' in data:
+            user.name = data['name']
+        if 'email' in data:
+            # Check if email is already taken
+            existing_user = User.query.filter(User.email == data['email'], User.id != user_id).first()
+            if existing_user:
+                return jsonify({'message': 'Email already in use'}), 400
+            user.email = data['email']
+        
+        try:
+            db.session.commit()
+            return jsonify({'message': 'Profile updated successfully'})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'message': 'Failed to update profile'}), 500
+
+@app.route('/api/user/stats', methods=['GET'])
+@jwt_required()
+def user_stats():
+    user_id = get_jwt_identity()
+    
+    # Get document count
+    doc_count = Document.query.filter_by(user_id=user_id).count()
+    
+    # Get game stats
+    game_scores = GameScore.query.filter_by(user_id=user_id).all()
+    total_games = len(game_scores)
+    total_score = sum(score.score for score in game_scores)
+    avg_score = total_score / total_games if total_games > 0 else 0
+    
+    # Get feedback count
+    feedback_count = Feedback.query.filter_by(user_id=user_id).count()
+    
+    return jsonify({
+        'documents_processed': doc_count,
+        'games_played': total_games,
+        'total_score': total_score,
+        'average_score': round(avg_score, 1),
+        'feedback_submitted': feedback_count
+    })
+
+@app.route('/api/documents/<int:doc_id>', methods=['DELETE'])
+@jwt_required()
+def delete_document(doc_id):
+    user_id = get_jwt_identity()
+    document = Document.query.filter_by(id=doc_id, user_id=user_id).first()
+    
+    if not document:
+        return jsonify({'message': 'Document not found'}), 404
+    
+    try:
+        # Delete associated file if it exists
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{doc_id}_{document.filename}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        db.session.delete(document)
+        db.session.commit()
+        return jsonify({'message': 'Document deleted successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': 'Failed to delete document'}), 500
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.utcnow().isoformat(),
+        'version': '1.0.0'
+    })
+
+@app.route('/api/feedback/<int:feedback_id>', methods=['GET'])
+@jwt_required()
+def get_feedback(feedback_id):
+    user_id = get_jwt_identity()
+    feedback = Feedback.query.filter_by(id=feedback_id, user_id=user_id).first()
+    
+    if not feedback:
+        return jsonify({'message': 'Feedback not found'}), 404
+    
+    return jsonify({
+        'id': feedback.id,
+        'subject': feedback.subject,
+        'message': feedback.message,
+        'rating': feedback.rating,
+        'created_at': feedback.created_at.isoformat()
+    })
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'message': 'Resource not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    return jsonify({'message': 'Internal server error'}), 500
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({'message': 'File too large'}), 413
+
 # Initialize database
 def create_tables():
     with app.app_context():
