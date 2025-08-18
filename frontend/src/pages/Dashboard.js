@@ -22,6 +22,10 @@ import {
   DialogContent,
   DialogActions,
   LinearProgress,
+  Fab,
+  Tooltip,
+  Avatar,
+  Divider
 } from '@mui/material';
 import {
   CloudUpload,
@@ -35,12 +39,21 @@ import {
   School,
   Psychology,
   Assessment,
+  Add,
+  Analytics,
+  PictureAsPdf,
+  TextSnippet,
+  InsertDriveFile,
+  AutoStories,
+  Timeline
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import axios from 'axios';
 import { useAuth } from '../App';
+import UserAnalytics from '../components/Analytics/UserAnalytics';
 
 const MotionCard = motion(Card);
 const MotionBox = motion(Box);
@@ -56,21 +69,55 @@ const Dashboard = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [deleteDialog, setDeleteDialog] = useState({ open: false, docId: null });
+  const [analytics, setAnalytics] = useState(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [recentActivity, setRecentActivity] = useState([]);
 
-  // Fetch user documents
+  // Fetch user documents and analytics
   useEffect(() => {
     fetchDocuments();
+    fetchAnalytics();
   }, []);
 
   const fetchDocuments = async () => {
     try {
       const response = await axios.get('/api/documents');
       setDocuments(response.data);
+      
+      // Create recent activity from documents
+      const activity = response.data.slice(0, 5).map(doc => ({
+        id: doc.id,
+        type: 'document',
+        title: `Uploaded ${doc.filename}`,
+        time: new Date(doc.created_at),
+        icon: getFileIcon(doc.file_type)
+      }));
+      setRecentActivity(activity);
+      
     } catch (error) {
       console.error('Error fetching documents:', error);
       setError('Failed to load documents');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAnalytics = async () => {
+    try {
+      const response = await axios.get('/api/analytics/user');
+      setAnalytics(response.data);
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    }
+  };
+
+  const getFileIcon = (fileType) => {
+    switch (fileType?.toLowerCase()) {
+      case 'pdf': return <PictureAsPdf color="error" />;
+      case 'docx': return <InsertDriveFile color="primary" />;
+      case 'image': return <Image color="success" />;
+      case 'text': return <TextSnippet color="info" />;
+      default: return <Description />;
     }
   };
 
